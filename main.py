@@ -16,7 +16,8 @@ def main():
     )
     mp_drawing = mp.solutions.drawing_utils
 
-    cap = cv2.VideoCapture(0)
+    # Use DirectShow backend for better performance on Windows
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
     if not cap.isOpened():
         print("Error: Could not open video stream.")
@@ -49,9 +50,19 @@ def main():
             break
 
         frame = cv2.flip(frame, 1)
+        # Resize frame for faster processing (e.g., 640x480)
+        frame = cv2.resize(frame, (640, 480))
+        # Ensure frame is np.uint8 for efficient processing
+        import numpy as np
+        if frame.dtype != np.uint8:
+            frame = frame.astype(np.uint8)
         h, w, c = frame.shape
 
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Only convert to RGB if needed (OpenCV frames are BGR by default)
+        if frame.shape[2] == 3:
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        else:
+            rgb_frame = frame
         result = hands.process(rgb_frame)
 
         if result.multi_hand_landmarks:
