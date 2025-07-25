@@ -4,13 +4,15 @@ import pyautogui
 import time
 
 def main():
+    
     # Initialize MediaPipe Hands
     mp_hands = mp.solutions.hands
+    # Inside your main() function, where you initialize MediaPipe Hands
     hands = mp_hands.Hands(
-        static_image_mode=False,
-        max_num_hands=1,
-        min_detection_confidence=0.7,
-        min_tracking_confidence=0.5
+    static_image_mode=False,
+    max_num_hands=1,
+    min_detection_confidence=0.6, # Slightly lower this if detection is too strict
+    min_tracking_confidence=0.4   # Slightly lower this if tracking is frequently lost
     )
     mp_drawing = mp.solutions.drawing_utils
 
