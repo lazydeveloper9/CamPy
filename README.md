@@ -1,4 +1,4 @@
-Hand Gesture Mouse Control
+#Hand Gesture Mouse Control
 This Python application allows you to control your mouse cursor and perform clicks and drags using hand gestures, leveraging your webcam and MediaPipe.
 Features
  * Cursor Control: Move your pinky finger to control the mouse cursor.
