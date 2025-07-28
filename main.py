@@ -22,7 +22,7 @@ def main():
         print("Error: Could not open video stream.")
         return
 
-    # Get screen size using pynput (pyautogui removed)
+    # Get device screen size
     import tkinter as tk
     root = tk.Tk()
     root.withdraw()
@@ -50,10 +50,12 @@ def main():
     is_dragging = False
 
     # Set a threshold for the pinch/drag gesture (normalized distance)
-    GESTURE_DISTANCE_THRESHOLD = 0.05
+    GESTURE_DISTANCE_THRESHOLD = 0.09  # Increased for more stable click and drag
 
     print("Hand gesture control active. Move your index finger to control the cursor.")
     print("Pinch index finger and thumb to drag. Release to stop drag. Press 'q' to quit.")
+
+
 
     while True:
         ret, frame = cap.read()
@@ -72,11 +74,30 @@ def main():
             frame = frame.astype(np.uint8)
         h, w, c = frame.shape
 
+        # Calculate the box for the current frame size (OpenCV window)
+        screen_aspect = screen_width / screen_height
+        frame_aspect = w / h
+        if screen_aspect > frame_aspect:
+            box_width = w - 40
+            box_height = int(box_width / screen_aspect)
+        else:
+            box_height = h - 40
+            box_width = int(box_height * screen_aspect)
+        box_x1 = (w - box_width) // 2
+        box_y1 = (h - box_height) // 2
+        box_x2 = box_x1 + box_width
+        box_y2 = box_y1 + box_height
+
+        # Draw the rectangle border on the OpenCV frame
+        cv2.rectangle(frame, (box_x1, box_y1), (box_x2, box_y2), (0, 255, 0), 3)
+
         if frame.shape[2] == 3:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         else:
             rgb_frame = frame
         result = hands.process(rgb_frame)
+
+        hand_in_box = False
 
         if result.multi_hand_landmarks:
             for hand_landmarks in result.multi_hand_landmarks:
@@ -87,35 +108,54 @@ def main():
                 thumb_tip_x = hand_landmarks.landmark[THUMB_TIP].x
                 thumb_tip_y = hand_landmarks.landmark[THUMB_TIP].y
 
-                x_pixel = int(index_finger_tip_x * w)
-                y_pixel = int(index_finger_tip_y * h)
-                cv2.circle(frame, (x_pixel, y_pixel), 10, (255, 0, 255), cv2.FILLED)
+                # Map normalized hand coordinates to box coordinates (frame coordinates)
+                hand_x = int(index_finger_tip_x * box_width) + box_x1
+                hand_y = int(index_finger_tip_y * box_height) + box_y1
 
-                target_x = int(index_finger_tip_x * screen_width)
-                target_y = int(index_finger_tip_y * screen_height)
+                # Draw a circle on the OpenCV frame for visualization
+                cv2.circle(frame, (hand_x, hand_y), 8, (0, 255, 255), -1)
 
-                curr_x = prev_x + (target_x - prev_x) / smoothening
-                curr_y = prev_y + (target_y - prev_y) / smoothening
-                mouse.position = (curr_x, curr_y)
-                prev_x, prev_y = curr_x, curr_y
+                # Check if hand is inside the box
+                if box_x1 <= hand_x <= box_x2 and box_y1 <= hand_y <= box_y2:
+                    hand_in_box = True
+                    # Map hand position inside the box to screen coordinates
+                    rel_x = (hand_x - box_x1) / box_width
+                    rel_y = (hand_y - box_y1) / box_height
+                    target_x = int(rel_x * screen_width)
+                    target_y = int(rel_y * screen_height)
+                else:
+                    hand_in_box = False
 
                 # Calculate normalized distance between thumb and index finger
                 distance_between_fingers = ((thumb_tip_x - index_finger_tip_x) ** 2 + (thumb_tip_y - index_finger_tip_y) ** 2) ** 0.5
                 current_time = time.time()
 
-                # Drag logic: pinch to drag, release to stop drag
-                if distance_between_fingers < GESTURE_DISTANCE_THRESHOLD:
-                    if not is_dragging and (current_time - last_gesture_time > gesture_debounce_time):
-                        print("Starting drag...")
-                        mouse.press(Button.left)
-                        is_dragging = True
-                        last_gesture_time = current_time
+                # Only move cursor if hand is inside the box
+                if hand_in_box:
+                    curr_x = prev_x + (target_x - prev_x) / smoothening
+                    curr_y = prev_y + (target_y - prev_y) / smoothening
+                    mouse.position = (curr_x, curr_y)
+                    prev_x, prev_y = curr_x, curr_y
+
+                    # Drag logic: pinch to drag, release to stop drag
+                    if distance_between_fingers < GESTURE_DISTANCE_THRESHOLD:
+                        if not is_dragging and (current_time - last_gesture_time > gesture_debounce_time):
+                            print("Starting drag...")
+                            mouse.press(Button.left)
+                            is_dragging = True
+                            last_gesture_time = current_time
+                    else:
+                        if is_dragging and (current_time - last_gesture_time > gesture_debounce_time):
+                            print("...Stopping drag")
+                            mouse.release(Button.left)
+                            is_dragging = False
+                            last_gesture_time = current_time
                 else:
-                    if is_dragging and (current_time - last_gesture_time > gesture_debounce_time):
-                        print("...Stopping drag")
+                    # If hand is outside, stop drag if it was active
+                    if is_dragging:
+                        print("...Stopping drag (hand out of box)")
                         mouse.release(Button.left)
                         is_dragging = False
-                        last_gesture_time = current_time
 
         # --- FPS Calculation and Display ---
         new_frame_time = time.time()
