@@ -30,7 +30,7 @@ def main():
     screen_height = root.winfo_screenheight()
     root.destroy()
 
-    smoothening = 5  # Lower value for higher sensitivity
+    smoothening = 9  # Lower value for higher sensitivity
     prev_x, prev_y = 0, 0
     curr_x, curr_y = 0, 0
 
@@ -56,7 +56,7 @@ def main():
     is_dragging = False
 
     # Set a threshold for the pinch/drag gesture (normalized distance)
-    GESTURE_DISTANCE_THRESHOLD = 0.02 # Increased for more stable click and drag
+    GESTURE_DISTANCE_THRESHOLD = 0.025 # Increased for more stable click and drag
 
     print("Hand gesture control active. Move your pinky finger to control the cursor.")
     print("Pinch pinky finger and thumb to drag. Release to stop drag. Press 'q' to quit.")
