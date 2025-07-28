@@ -42,7 +42,7 @@ def main():
     MIN_RELEASE_HOLD_TIME = 0.18  # seconds, must release pinch this long to stop drag
     last_click_time = 0
     CLICK_DEBOUNCE_TIME = 0.5  # seconds
-
+    PINKY_FINGER_MCP = 17  # Pinky finger metacarpal
     INDEX_FINGER_TIP = 8
     THUMB_TIP = 4
 
@@ -56,10 +56,10 @@ def main():
     is_dragging = False
 
     # Set a threshold for the pinch/drag gesture (normalized distance)
-    GESTURE_DISTANCE_THRESHOLD = 0.02  # Increased for more stable click and drag
+    GESTURE_DISTANCE_THRESHOLD = 0.02 # Increased for more stable click and drag
 
-    print("Hand gesture control active. Move your index finger to control the cursor.")
-    print("Pinch index finger and thumb to drag. Release to stop drag. Press 'q' to quit.")
+    print("Hand gesture control active. Move your pinky finger to control the cursor.")
+    print("Pinch pinky finger and thumb to drag. Release to stop drag. Press 'q' to quit.")
 
 
 
@@ -97,13 +97,19 @@ def main():
                 index_finger_tip_y = hand_landmarks.landmark[INDEX_FINGER_TIP].y
                 thumb_tip_x = hand_landmarks.landmark[THUMB_TIP].x
                 thumb_tip_y = hand_landmarks.landmark[THUMB_TIP].y
-
+                pinky_finger_x = hand_landmarks.landmark[PINKY_FINGER_MCP].x # Adjusted for better pinch detection
+                pinky_finger_y = hand_landmarks.landmark[PINKY_FINGER_MCP].y # Adjusted for better pinch detection
                 # Map normalized hand coordinates to frame coordinates
-                hand_x = int(index_finger_tip_x * w)
-                hand_y = int(index_finger_tip_y * h)
-
+                hand_x = int(pinky_finger_x * w)
+                hand_y = int(pinky_finger_y * h)
+                # thumb_x = int(thumb_tip_x * w)
+                # thumb_y = int(thumb_tip_y * h)  
+                # index_x = int(index_finger_tip_x * w)
+                # index_y = int(index_finger_tip_y * h)
                 # Draw a circle on the OpenCV frame for visualization
-                cv2.circle(frame, (hand_x, hand_y), 8, (0, 255, 255), -1)
+                cv2.circle(frame, (hand_x, hand_y), 8, (0, 0, 255), -1)
+                # cv2.circle(frame, (thumb_x, thumb_y), 8, (0, 0, 255), -1)
+                # cv2.circle(frame, (index_x, index_y), 8, (0, 0, 255), -1)
 
                 # Map only a central region of the frame to the full screen
                 # E.g., use 20% margin on each side, so only 60% of the frame area is mapped
@@ -114,8 +120,8 @@ def main():
                 min_y = margin_y
                 max_y = 1.0 - margin_y
                 # Clamp hand position to the active region
-                rel_x = (index_finger_tip_x - min_x) / (max_x - min_x)
-                rel_y = (index_finger_tip_y - min_y) / (max_y - min_y)
+                rel_y = (pinky_finger_y - min_y) / (max_y - min_y)
+                rel_x = (pinky_finger_x - min_x) / (max_x - min_x)
                 rel_x = min(max(rel_x, 0.0), 1.0)
                 rel_y = min(max(rel_y, 0.0), 1.0)
                 target_x = int(rel_x * (screen_width - 1))
