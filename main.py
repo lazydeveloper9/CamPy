@@ -30,12 +30,18 @@ def main():
     screen_height = root.winfo_screenheight()
     root.destroy()
 
-    smoothening = 9
+    smoothening = 5  # Lower value for higher sensitivity
     prev_x, prev_y = 0, 0
     curr_x, curr_y = 0, 0
 
     last_gesture_time = 0
-    gesture_debounce_time = 0.3
+    gesture_debounce_time = 0.6  # Increased debounce for more stable drag activation
+    drag_hold_start = None
+    drag_release_start = None
+    MIN_PINCH_HOLD_TIME = 0.18  # seconds, must hold pinch this long to start drag
+    MIN_RELEASE_HOLD_TIME = 0.18  # seconds, must release pinch this long to stop drag
+    last_click_time = 0
+    CLICK_DEBOUNCE_TIME = 0.5  # seconds
 
     INDEX_FINGER_TIP = 8
     THUMB_TIP = 4
@@ -50,7 +56,7 @@ def main():
     is_dragging = False
 
     # Set a threshold for the pinch/drag gesture (normalized distance)
-    GESTURE_DISTANCE_THRESHOLD = 0.09  # Increased for more stable click and drag
+    GESTURE_DISTANCE_THRESHOLD = 0.02  # Increased for more stable click and drag
 
     print("Hand gesture control active. Move your index finger to control the cursor.")
     print("Pinch index finger and thumb to drag. Release to stop drag. Press 'q' to quit.")
@@ -74,30 +80,14 @@ def main():
             frame = frame.astype(np.uint8)
         h, w, c = frame.shape
 
-        # Calculate the box for the current frame size (OpenCV window)
-        screen_aspect = screen_width / screen_height
-        frame_aspect = w / h
-        if screen_aspect > frame_aspect:
-            box_width = w - 40
-            box_height = int(box_width / screen_aspect)
-        else:
-            box_height = h - 40
-            box_width = int(box_height * screen_aspect)
-        box_x1 = (w - box_width) // 2
-        box_y1 = (h - box_height) // 2
-        box_x2 = box_x1 + box_width
-        box_y2 = box_y1 + box_height
-
-        # Draw the rectangle border on the OpenCV frame
-        cv2.rectangle(frame, (box_x1, box_y1), (box_x2, box_y2), (0, 255, 0), 3)
+    # Set frame to a smaller fixed size (e.g., 640x360)
+    # (Already resized above, so just ensure target_height and target_width are set)
 
         if frame.shape[2] == 3:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         else:
             rgb_frame = frame
         result = hands.process(rgb_frame)
-
-        hand_in_box = False
 
         if result.multi_hand_landmarks:
             for hand_landmarks in result.multi_hand_landmarks:
@@ -108,54 +98,71 @@ def main():
                 thumb_tip_x = hand_landmarks.landmark[THUMB_TIP].x
                 thumb_tip_y = hand_landmarks.landmark[THUMB_TIP].y
 
-                # Map normalized hand coordinates to box coordinates (frame coordinates)
-                hand_x = int(index_finger_tip_x * box_width) + box_x1
-                hand_y = int(index_finger_tip_y * box_height) + box_y1
+                # Map normalized hand coordinates to frame coordinates
+                hand_x = int(index_finger_tip_x * w)
+                hand_y = int(index_finger_tip_y * h)
 
                 # Draw a circle on the OpenCV frame for visualization
                 cv2.circle(frame, (hand_x, hand_y), 8, (0, 255, 255), -1)
 
-                # Check if hand is inside the box
-                if box_x1 <= hand_x <= box_x2 and box_y1 <= hand_y <= box_y2:
-                    hand_in_box = True
-                    # Map hand position inside the box to screen coordinates
-                    rel_x = (hand_x - box_x1) / box_width
-                    rel_y = (hand_y - box_y1) / box_height
-                    target_x = int(rel_x * screen_width)
-                    target_y = int(rel_y * screen_height)
-                else:
-                    hand_in_box = False
+                # Map only a central region of the frame to the full screen
+                # E.g., use 20% margin on each side, so only 60% of the frame area is mapped
+                margin_x = 0.3
+                margin_y = 0.3
+                min_x = margin_x
+                max_x = 1.0 - margin_x
+                min_y = margin_y
+                max_y = 1.0 - margin_y
+                # Clamp hand position to the active region
+                rel_x = (index_finger_tip_x - min_x) / (max_x - min_x)
+                rel_y = (index_finger_tip_y - min_y) / (max_y - min_y)
+                rel_x = min(max(rel_x, 0.0), 1.0)
+                rel_y = min(max(rel_y, 0.0), 1.0)
+                target_x = int(rel_x * (screen_width - 1))
+                target_y = int(rel_y * (screen_height - 1))
 
                 # Calculate normalized distance between thumb and index finger
                 distance_between_fingers = ((thumb_tip_x - index_finger_tip_x) ** 2 + (thumb_tip_y - index_finger_tip_y) ** 2) ** 0.5
                 current_time = time.time()
 
-                # Only move cursor if hand is inside the box
-                if hand_in_box:
-                    curr_x = prev_x + (target_x - prev_x) / smoothening
-                    curr_y = prev_y + (target_y - prev_y) / smoothening
-                    mouse.position = (curr_x, curr_y)
-                    prev_x, prev_y = curr_x, curr_y
+                # Move cursor always (no box restriction)
+                curr_x = prev_x + (target_x - prev_x) / smoothening
+                curr_y = prev_y + (target_y - prev_y) / smoothening
+                mouse.position = (curr_x, curr_y)
+                prev_x, prev_y = curr_x, curr_y
 
+                # Click logic: single click when pinch detected and not dragging
+                if distance_between_fingers < GESTURE_DISTANCE_THRESHOLD:
+                    if not is_dragging:
+                        if current_time - last_click_time > CLICK_DEBOUNCE_TIME:
+                            print("Click!")
+                            mouse.click(Button.left)
+                            last_click_time = current_time
                     # Drag logic: pinch to drag, release to stop drag
-                    if distance_between_fingers < GESTURE_DISTANCE_THRESHOLD:
-                        if not is_dragging and (current_time - last_gesture_time > gesture_debounce_time):
+                    drag_release_start = None
+                    if not is_dragging:
+                        if drag_hold_start is None:
+                            drag_hold_start = current_time
+                        elif (current_time - drag_hold_start) > MIN_PINCH_HOLD_TIME:
                             print("Starting drag...")
                             mouse.press(Button.left)
                             is_dragging = True
                             last_gesture_time = current_time
                     else:
-                        if is_dragging and (current_time - last_gesture_time > gesture_debounce_time):
+                        drag_hold_start = None  # Already dragging
+                else:
+                    # Pinch released
+                    drag_hold_start = None
+                    if is_dragging:
+                        if drag_release_start is None:
+                            drag_release_start = current_time
+                        elif (current_time - drag_release_start) > MIN_RELEASE_HOLD_TIME:
                             print("...Stopping drag")
                             mouse.release(Button.left)
                             is_dragging = False
                             last_gesture_time = current_time
-                else:
-                    # If hand is outside, stop drag if it was active
-                    if is_dragging:
-                        print("...Stopping drag (hand out of box)")
-                        mouse.release(Button.left)
-                        is_dragging = False
+                    else:
+                        drag_release_start = None  # Not dragging
 
         # --- FPS Calculation and Display ---
         new_frame_time = time.time()
