@@ -62,7 +62,12 @@ def main():
             break
 
         frame = cv2.flip(frame, 1)
-        frame = cv2.resize(frame, (640, 480))
+        # Resize frame to 720p height while maintaining aspect ratio
+        target_height = 720
+        h, w = frame.shape[:2]
+        aspect_ratio = w / h
+        target_width = int(target_height * aspect_ratio)
+        frame = cv2.resize(frame, (target_width, target_height))
         if frame.dtype != np.uint8:
             frame = frame.astype(np.uint8)
         h, w, c = frame.shape
